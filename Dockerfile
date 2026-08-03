@@ -5,8 +5,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     LANG=en_US.UTF-8
 
-# 1. تثبيت الحزم الأساسية و pyenv
-RUN apt-get update -y && \
+# 1. تثبيت الحزم الأساسية و pyenv (من ريبرو cont)
+RUN apt-get update -y || (sleep 5 && apt-get update -y) && \
     apt-get install -y --no-install-recommends \
       openssh-server sudo curl wget git vim nano htop tmux \
       zip unzip tar rsync net-tools iproute2 iputils-ping dnsutils \
@@ -42,7 +42,7 @@ RUN curl -s https://packagecloud.io/install/repositories/pufferpanel/pufferpanel
     apt-get install -y pufferpanel && \
     rm -rf /var/lib/apt/lists/*
 
-# 6. إعداد مجلدات PufferPanel وملف الإعدادات (هخليها تشتغل على 8080)
+# 6. إعداد مجلدات PufferPanel وملف الإعدادات (هتشغل على بورت 8080)
 RUN mkdir -p /var/lib/pufferpanel/email /var/lib/pufferpanel/servers /etc/pufferpanel
 RUN echo '{}' > /var/lib/pufferpanel/email/emails.json
 COPY <<'EOF' /etc/pufferpanel/config.json
@@ -82,24 +82,23 @@ export PYENV_ROOT="/root/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PYENV_ROOT/shims:$PATH"
 eval "$(pyenv init -)"
 
-# إلغاء متغير PORT بتاع Railway عشان PufferPanel يقرأ ملف الكونفيج بس
-unset PORT
-
 # 1. تشغيل PufferPanel على بورت 8080
 cd /var/lib/pufferpanel
+unset PORT
 pufferpanel run > /var/log/pufferpanel.log 2>&1 &
+PUFFER_PID=$!
 
 # 2. تشغيل الـ Web Terminal على بورت 8081
 /usr/local/bin/ttyd --port 8081 --writable --credential "root:${ROOT_PASSWORD}" /bin/bash -l &
 
-# 3. تشغيل Cloudflare Tunnel للـ Web Terminal (على بورت 8081)
+# 3. تشغيل Cloudflare Tunnel للـ Web Terminal
 (while true; do
   > /tmp/cf.log
   /usr/local/bin/cloudflared tunnel --url http://localhost:8081 >> /tmp/cf.log 2>&1
   sleep 5
 done) &
 
-# طباعة بيانات الدخول
+# 4. طباعة بيانات الدخول وفحص اللوحة
 (while true; do
   sleep 5
   URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' /tmp/cf.log | tail -n 1)
@@ -111,6 +110,12 @@ done) &
   echo "  🚀 PufferPanel is running on port 8080"
   echo "  (Railway Settings -> Networking -> Generate Domain -> Port 8080)"
   echo "================================================"
+  
+  # فحص لو PufferPanel وقعت
+  if ! kill -0 $PUFFER_PID 2>/dev/null; then
+      echo "❌❌ PufferPanel crashed! Error logs:"
+      cat /var/log/pufferpanel.log
+  fi
   sleep 25
 done) &
 
