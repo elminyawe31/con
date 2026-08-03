@@ -42,7 +42,7 @@ RUN curl -s https://packagecloud.io/install/repositories/pufferpanel/pufferpanel
     apt-get install -y pufferpanel && \
     rm -rf /var/lib/apt/lists/*
 
-# 6. إعداد مجلدات PufferPanel وملف الإعدادات في مكانين لضمان قراءته
+# 6. إعداد مجلدات PufferPanel وملف الإعدادات
 RUN mkdir -p /var/lib/pufferpanel/email /var/lib/pufferpanel/servers /etc/pufferpanel
 RUN echo '{}' > /var/lib/pufferpanel/email/emails.json
 COPY <<'EOF' /etc/pufferpanel/config.json
@@ -82,19 +82,12 @@ export PYENV_ROOT="/root/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PYENV_ROOT/shims:$PATH"
 eval "$(pyenv init -)"
 
-# تشغيل PufferPanel مع تحديد ملف الكونفيج والبورت صراحة
-cd /var/lib/pufferpanel
-nohup env PORT=8081 pufferpanel run --config /var/lib/pufferpanel/config.json > /var/log/pufferpanel.log 2>&1 &
-PUFFER_PID=$!
+# إلغاء متغير PORT بتاع Railway عشان PufferPanel ما يتعارضش مع ttyd
+unset PORT
 
-# فحص سريع للتأكد إن اللوحة مش هتقع فوراً
-sleep 5
-if ! kill -0 $PUFFER_PID 2>/dev/null; then
-    echo "❌❌ PufferPanel failed to start! Error logs:"
-    cat /var/log/pufferpanel.log
-else
-    echo "✅ PufferPanel started successfully on port 8081."
-fi
+# تشغيل PufferPanel وطباعة اللوج مباشرة على شاشة Railway
+cd /var/lib/pufferpanel
+pufferpanel run > /var/log/pufferpanel.log 2>&1 &
 
 # تشغيل الـ Web Terminal على بورت 8080
 /usr/local/bin/ttyd --port 8080 --writable --credential "root:${ROOT_PASSWORD}" /bin/bash -l &
@@ -116,12 +109,12 @@ done) &
   echo "  User: root | Pass: ${ROOT_PASSWORD}"
   echo "================================================"
   echo "  🚀 PufferPanel is running on port 8081"
-  echo "  (Railway Settings -> Networking -> Generate Domain -> Port 8081)"
   echo "================================================"
   sleep 25
 done) &
 
-tail -f /tmp/cf.log
+# مراقبة لوج PufferPanel وطباعته عشان نشوف أي خطأ فوراً
+tail -f /var/log/pufferpanel.log /tmp/cf.log
 EOF
 RUN chmod +x /entrypoint.sh
 
