@@ -5,14 +5,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     LANG=en_US.UTF-8
 
-# 1. تثبيت الحزم الأساسية، pyenv، sqlite3، و expect (لأتمتة إنشاء الحساب)
+# 1. تثبيت الحزم الأساسية و pyenv و sqlite3
 RUN apt-get update -y || (sleep 5 && apt-get update -y) && \
     apt-get install -y --no-install-recommends \
       openssh-server sudo curl wget git vim nano htop tmux \
       zip unzip tar rsync net-tools iproute2 iputils-ping dnsutils \
       build-essential python3 python3-pip ca-certificates gnupg lsb-release \
       software-properties-common locales tzdata cron bash-completion man-db \
-      jq less file passwd openssh-client sqlite3 expect \
+      jq less file passwd openssh-client sqlite3 \
       make libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
       libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev && \
     locale-gen en_US.UTF-8 && \
@@ -27,22 +27,25 @@ RUN pyenv install 3.11 && \
     pyenv install 3.13 && \
     pyenv global 3.13
 
-# 3. تثبيت ttyd (الـ Web Terminal)
+# 3. تثبيت مكتبة bcrypt على بايثون pyenv (لتشفير باسورد اللوحة تلقائياً)
+RUN pip install bcrypt
+
+# 4. تثبيت ttyd (الـ Web Terminal)
 RUN arch="$(dpkg --print-architecture)" && \
     case "$arch" in amd64) t=x86_64;; arm64) t=aarch64;; *) t="$arch";; esac && \
     curl -fsSL "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.${t}" \
       -o /usr/local/bin/ttyd && chmod +x /usr/local/bin/ttyd
 
-# 4. تثبيت Cloudflared
+# 5. تثبيت Cloudflared
 RUN curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
       -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared
 
-# 5. تثبيت PufferPanel
+# 6. تثبيت PufferPanel
 RUN curl -s https://packagecloud.io/install/repositories/pufferpanel/pufferpanel/script.deb.sh | os=ubuntu dist=noble bash && \
     apt-get install -y pufferpanel && \
     rm -rf /var/lib/apt/lists/*
 
-# 6. إعداد مجلدات PufferPanel وملف الإعدادات
+# 7. إعداد مجلدات PufferPanel وملف الإعدادات
 RUN mkdir -p /var/lib/pufferpanel/email /var/lib/pufferpanel/servers /etc/pufferpanel
 RUN echo '{}' > /var/lib/pufferpanel/email/emails.json
 COPY <<'EOF' /etc/pufferpanel/config.json
@@ -66,12 +69,12 @@ COPY <<'EOF' /etc/pufferpanel/config.json
 EOF
 RUN cp /etc/pufferpanel/config.json /var/lib/pufferpanel/config.json
 
-# 7. إعداد SSH
+# 8. إعداد SSH
 RUN mkdir -p /run/sshd && \
     sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && \
     sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
 
-# 8. ملف التشغيل الرئيسي (Entrypoint)
+# 9. ملف التشغيل الرئيسي (Entrypoint)
 COPY <<'EOF' /entrypoint.sh
 #!/usr/bin/env bash
 set -e
@@ -115,40 +118,53 @@ done) &
   done
 ) &
 
-# 4. إنشاء حساب الأدمن تلقائياً (ELMINYAWE) باستخدام expect مع تأخير 5 ثواني بين كل إدخال
+# 4. إنشاء حساب الأدمن تلقائياً (ELMINYAWE) مباشرة في قاعدة البيانات (طريقة مضمونة 100%)
 (
   echo "Waiting for PufferPanel database to initialize..."
   while ! sqlite3 /var/lib/pufferpanel/pufferpanel.db ".tables" 2>/dev/null | grep -q "users"; do
     sleep 2
   done
   
-  if ! sqlite3 /var/lib/pufferpanel/pufferpanel.db "SELECT 1 FROM users WHERE email='ELMINYAWE@localhost.com' LIMIT 1;" 2>/dev/null | grep -q 1; then
-      echo "Creating Admin User (ELMINYAWE) via expect..."
-      TERM=dumb expect << 'EXPECT_EOF'
-set timeout 30
-log_user 1
-spawn pufferpanel user add
-expect -re "Username:"
-sleep 5
-send -- "ELMINYAWE\r"
-expect -re "Email:"
-sleep 5
-send -- "ELMINYAWE@localhost.com\r"
-expect -re "Password:"
-sleep 5
-send -- "ELMINYAWE\r"
-expect -re "Confirm Password:"
-sleep 5
-send -- "ELMINYAWE\r"
-expect -re "Admin:"
-sleep 5
-send -- "y\r"
-expect eof
-EXPECT_EOF
-      echo "✅ Admin User created successfully!"
-  else
-      echo "Admin User (ELMINYAWE) already exists."
-  fi
+  echo "Creating Admin User (ELMINYAWE) in database..."
+  python3 << 'PYEOF'
+import sqlite3, bcrypt, sys
+
+db_path = '/var/lib/pufferpanel/pufferpanel.db'
+conn = sqlite3.connect(db_path)
+c = conn.cursor()
+
+try:
+    c.execute("SELECT 1 FROM users WHERE email='ELMINYAWE@localhost.com'")
+    if c.fetchone():
+        print("Admin User (ELMINYAWE) already exists.")
+        sys.exit(0)
+except sqlite3.OperationalError:
+    pass
+
+# تشفير الباسورد
+hashed = bcrypt.hashpw(b'ELMINYAWE', bcrypt.gensalt(10)).decode()
+
+# معرفة اسم عمود الأدمن (لأن النسخ بتختلف)
+c.execute("PRAGMA table_info(users)")
+columns = [col[1] for col in c.fetchall()]
+
+admin_col = None
+for col in ['root_admin', 'admin', 'is_admin']:
+    if col in columns:
+        admin_col = col
+        break
+
+if admin_col:
+    query = f"INSERT INTO users (username, email, password, {admin_col}) VALUES (?, ?, ?, 1)"
+    c.execute(query, ('ELMINYAWE', 'ELMINYAWE@localhost.com', hashed))
+else:
+    query = "INSERT INTO users (username, email, password) VALUES (?, ?, ?)"
+    c.execute(query, ('ELMINYAWE', 'ELMINYAWE@localhost.com', hashed))
+
+conn.commit()
+conn.close()
+print("✅ Admin User created successfully!")
+PYEOF
 ) &
 
 # 5. طباعة بيانات الدخول بشكل احترافي ومنظم
