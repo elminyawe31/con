@@ -118,7 +118,7 @@ done) &
   done
 ) &
 
-# 4. إنشاء حساب الأدمن تلقائياً مع صلاحيات الأدمن الكاملة (طريقة مضمونة 100%)
+# 4. إنشاء حساب الأدمن تلقائياً مع صلاحيات الأدمن الكاملة (تم تحديث الهيكل)
 (
   echo "Waiting for PufferPanel database to initialize..."
   while ! sqlite3 /var/lib/pufferpanel/pufferpanel.db ".tables" 2>/dev/null | grep -q "users"; do
@@ -148,27 +148,27 @@ try:
     
     user_id = user_row[0]
 
-    # 2. إضافة صلاحيات الأدمن في جدول permissions
-    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='permissions'")
-    if c.fetchone():
-        c.execute("PRAGMA table_info(permissions)")
-        cols = [col[1] for col in c.fetchall()]
-        
-        if 'user_id' in cols and 'permission' in cols:
-            # إدراج صلاحية Wildcard (*) و admin 
-            for perm in ['*', 'admin']:
-                c.execute("SELECT 1 FROM permissions WHERE user_id=? AND permission=?", (user_id, perm))
-                if not c.fetchone():
-                    if 'value' in cols:
-                        c.execute("INSERT INTO permissions (user_id, permission, value) VALUES (?, ?, '1')", (user_id, perm))
-                    else:
-                        c.execute("INSERT INTO permissions (user_id, permission) VALUES (?, ?)", (user_id, perm))
-                    conn.commit()
-                    print(f"✅ Permission '{perm}' granted successfully!")
-        else:
-            print("Permissions table structure not as expected. Columns found:", cols)
+    # 2. إضافة صلاحيات الأدمن في جدول permissions (هيكل النسخة الجديدة)
+    c.execute("SELECT 1 FROM permissions WHERE user_id=?", (user_id,))
+    if not c.fetchone():
+        # إدراج صف جديد بصلاحيات أدمن كاملة (1)
+        c.execute("""
+            INSERT INTO permissions (
+                user_id, admin, view_server, create_server, view_nodes, edit_nodes, 
+                deploy_nodes, view_templates, edit_templates, edit_users, view_users, 
+                edit_server_admin, delete_server, panel_settings, edit_server_data, 
+                edit_server_users, install_server, update_server, view_server_console, 
+                send_server_console, stop_server, start_server, view_server_stats, 
+                view_server_files, sftp_server, put_server_files
+            ) VALUES (?, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
+        """, (user_id,))
+        conn.commit()
+        print("✅ Admin permissions granted successfully!")
     else:
-        print("Permissions table not found.")
+        # تحديث الصف الحالي ليكون أدمن
+        c.execute("UPDATE permissions SET admin=1 WHERE user_id=?", (user_id,))
+        conn.commit()
+        print("✅ Admin permissions updated.")
 
 except Exception as e:
     print(f"Error: {e}")
