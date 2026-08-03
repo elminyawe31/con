@@ -118,14 +118,14 @@ done) &
   done
 ) &
 
-# 4. إنشاء حساب الأدمن تلقائياً (ELMINYAWE) مباشرة في قاعدة البيانات (طريقة مضمونة 100%)
+# 4. إنشاء حساب الأدمن تلقائياً مع صلاحيات الأدمن الكاملة (طريقة مضمونة 100%)
 (
   echo "Waiting for PufferPanel database to initialize..."
   while ! sqlite3 /var/lib/pufferpanel/pufferpanel.db ".tables" 2>/dev/null | grep -q "users"; do
     sleep 2
   done
   
-  echo "Creating Admin User (ELMINYAWE) in database..."
+  echo "Creating Admin User (ELMINYAWE) and granting permissions..."
   python3 << 'PYEOF'
 import sqlite3, bcrypt, sys
 
@@ -133,37 +133,47 @@ db_path = '/var/lib/pufferpanel/pufferpanel.db'
 conn = sqlite3.connect(db_path)
 c = conn.cursor()
 
+# 1. إنشاء الحساب إذا لم يكن موجوداً
 try:
-    c.execute("SELECT 1 FROM users WHERE email='ELMINYAWE@localhost.com'")
+    c.execute("SELECT id FROM users WHERE email='ELMINYAWE@localhost.com'")
+    user_row = c.fetchone()
+    if not user_row:
+        hashed = bcrypt.hashpw(b'ELMINYAWE', bcrypt.gensalt(10)).decode()
+        c.execute("INSERT INTO users (username, email, password) VALUES (?, ?, ?)", ('ELMINYAWE', 'ELMINYAWE@localhost.com', hashed))
+        conn.commit()
+        c.execute("SELECT id FROM users WHERE email='ELMINYAWE@localhost.com'")
+        user_row = c.fetchone()
+        print("✅ Admin User created.")
+    else:
+        print("Admin User already exists.")
+    
+    user_id = user_row[0]
+
+    # 2. إضافة صلاحيات الأدمن في جدول permissions
+    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='permissions'")
     if c.fetchone():
-        print("Admin User (ELMINYAWE) already exists.")
-        sys.exit(0)
-except sqlite3.OperationalError:
-    pass
+        c.execute("PRAGMA table_info(permissions)")
+        cols = [col[1] for col in c.fetchall()]
+        
+        if 'user_id' in cols and 'permission' in cols and 'value' in cols:
+            # التحقق إذا كانت الصلاحية موجودة
+            c.execute("SELECT 1 FROM permissions WHERE user_id=? AND permission='*'", (user_id,))
+            if not c.fetchone():
+                # إدراج صلاحية Wildcard (*) التي تعطي صلاحية أدمن كاملة
+                c.execute("INSERT INTO permissions (user_id, permission, value) VALUES (?, '*', '1')", (user_id,))
+                conn.commit()
+                print("✅ Admin permissions granted successfully!")
+            else:
+                print("Admin permissions already exist.")
+        else:
+            print("Permissions table structure not as expected.")
+    else:
+        print("Permissions table not found.")
 
-# تشفير الباسورد
-hashed = bcrypt.hashpw(b'ELMINYAWE', bcrypt.gensalt(10)).decode()
-
-# معرفة اسم عمود الأدمن (لأن النسخ بتختلف)
-c.execute("PRAGMA table_info(users)")
-columns = [col[1] for col in c.fetchall()]
-
-admin_col = None
-for col in ['root_admin', 'admin', 'is_admin']:
-    if col in columns:
-        admin_col = col
-        break
-
-if admin_col:
-    query = f"INSERT INTO users (username, email, password, {admin_col}) VALUES (?, ?, ?, 1)"
-    c.execute(query, ('ELMINYAWE', 'ELMINYAWE@localhost.com', hashed))
-else:
-    query = "INSERT INTO users (username, email, password) VALUES (?, ?, ?)"
-    c.execute(query, ('ELMINYAWE', 'ELMINYAWE@localhost.com', hashed))
-
-conn.commit()
-conn.close()
-print("✅ Admin User created successfully!")
+except Exception as e:
+    print(f"Error: {e}")
+finally:
+    conn.close()
 PYEOF
 ) &
 
