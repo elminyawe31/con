@@ -42,14 +42,15 @@ RUN curl -s https://packagecloud.io/install/repositories/pufferpanel/pufferpanel
     apt-get install -y pufferpanel && \
     rm -rf /var/lib/apt/lists/*
 
-# 6. إعداد مجلدات PufferPanel وملف الإعدادات (هتشغل على بورت 8080)
+# 6. إعداد مجلدات PufferPanel وملف الإعدادات (هتشغل على بورت 8080 وإضافة مسار الواجهة لحل مشكلة 404)
 RUN mkdir -p /var/lib/pufferpanel/email /var/lib/pufferpanel/servers /etc/pufferpanel
 RUN echo '{}' > /var/lib/pufferpanel/email/emails.json
 COPY <<'EOF' /etc/pufferpanel/config.json
 {
   "panel": {
     "web": {
-      "listen": "0.0.0.0:8080"
+      "listen": "0.0.0.0:8080",
+      "files": "/var/www/pufferpanel"
     },
     "database": {
       "dialect": "sqlite3",
