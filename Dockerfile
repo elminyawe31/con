@@ -5,14 +5,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     LANG=en_US.UTF-8
 
-# 1. تثبيت الحزم الأساسية، pyenv، sqlite3
+# 1. تثبيت الحزم الأساسية، pyenv، sqlite3، و expect (لأتمتة إنشاء الحساب)
 RUN apt-get update -y || (sleep 5 && apt-get update -y) && \
     apt-get install -y --no-install-recommends \
       openssh-server sudo curl wget git vim nano htop tmux \
       zip unzip tar rsync net-tools iproute2 iputils-ping dnsutils \
       build-essential python3 python3-pip ca-certificates gnupg lsb-release \
       software-properties-common locales tzdata cron bash-completion man-db \
-      jq less file passwd openssh-client sqlite3 \
+      jq less file passwd openssh-client sqlite3 expect \
       make libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
       libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev && \
     locale-gen en_US.UTF-8 && \
@@ -27,25 +27,22 @@ RUN pyenv install 3.11 && \
     pyenv install 3.13 && \
     pyenv global 3.13
 
-# 3. تثبيت مكتبة bcrypt على بايثون pyenv (لتشفير باسورد اللوحة)
-RUN pip install bcrypt
-
-# 4. تثبيت ttyd (الـ Web Terminal)
+# 3. تثبيت ttyd (الـ Web Terminal)
 RUN arch="$(dpkg --print-architecture)" && \
     case "$arch" in amd64) t=x86_64;; arm64) t=aarch64;; *) t="$arch";; esac && \
     curl -fsSL "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.${t}" \
       -o /usr/local/bin/ttyd && chmod +x /usr/local/bin/ttyd
 
-# 5. تثبيت Cloudflared
+# 4. تثبيت Cloudflared
 RUN curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
       -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared
 
-# 6. تثبيت PufferPanel
+# 5. تثبيت PufferPanel
 RUN curl -s https://packagecloud.io/install/repositories/pufferpanel/pufferpanel/script.deb.sh | os=ubuntu dist=noble bash && \
     apt-get install -y pufferpanel && \
     rm -rf /var/lib/apt/lists/*
 
-# 7. إعداد مجلدات PufferPanel وملف الإعدادات
+# 6. إعداد مجلدات PufferPanel وملف الإعدادات
 RUN mkdir -p /var/lib/pufferpanel/email /var/lib/pufferpanel/servers /etc/pufferpanel
 RUN echo '{}' > /var/lib/pufferpanel/email/emails.json
 COPY <<'EOF' /etc/pufferpanel/config.json
@@ -69,12 +66,12 @@ COPY <<'EOF' /etc/pufferpanel/config.json
 EOF
 RUN cp /etc/pufferpanel/config.json /var/lib/pufferpanel/config.json
 
-# 8. إعداد SSH
+# 7. إعداد SSH
 RUN mkdir -p /run/sshd && \
     sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && \
     sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
 
-# 9. ملف التشغيل الرئيسي (Entrypoint)
+# 8. ملف التشغيل الرئيسي (Entrypoint)
 COPY <<'EOF' /entrypoint.sh
 #!/usr/bin/env bash
 set -e
@@ -118,7 +115,7 @@ done) &
   done
 ) &
 
-# 4. إنشاء حساب الأدمن تلقائياً (ELMINYAWE) مباشرة في قاعدة البيانات
+# 4. إنشاء حساب الأدمن تلقائياً (ELMINYAWE) باستخدام expect لتجاوز المشاكل التفاعلية
 (
   echo "Waiting for PufferPanel database to initialize..."
   while ! sqlite3 /var/lib/pufferpanel/pufferpanel.db ".tables" 2>/dev/null | grep -q "users"; do
@@ -126,10 +123,18 @@ done) &
   done
   
   if ! sqlite3 /var/lib/pufferpanel/pufferpanel.db "SELECT 1 FROM users WHERE email='ELMINYAWE@localhost.com' LIMIT 1;" 2>/dev/null | grep -q 1; then
-      echo "Creating Admin User (ELMINYAWE)..."
-      HASH=$(python3 -c "import bcrypt; print(bcrypt.hashpw(b'ELMINYAWE', bcrypt.gensalt(10)).decode())")
-      sqlite3 /var/lib/pufferpanel/pufferpanel.db "INSERT INTO users (username, email, password, admin) VALUES ('ELMINYAWE', 'ELMINYAWE@localhost.com', '${HASH}', 1);"
-      echo "✅ Admin User created successfully in database!"
+      echo "Creating Admin User (ELMINYAWE) via expect..."
+      expect << 'EXPECT_EOF'
+set timeout 20
+spawn pufferpanel user add
+expect "Username:" { send "ELMINYAWE\r" }
+expect "Email:" { send "ELMINYAWE@localhost.com\r" }
+expect "Password:" { send "ELMINYAWE\r" }
+expect "Confirm Password:" { send "ELMINYAWE\r" }
+expect "Admin:" { send "y\r" }
+expect eof
+EXPECT_EOF
+      echo "✅ Admin User created successfully!"
   else
       echo "Admin User (ELMINYAWE) already exists."
   fi
