@@ -5,7 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     LANG=en_US.UTF-8
 
-# 1. تثبيت الحزم الأساسية، pyenv، sqlite3، و bcrypt (لتشفير باسورد اللوحة)
+# 1. تثبيت الحزم الأساسية، pyenv، sqlite3
 RUN apt-get update -y || (sleep 5 && apt-get update -y) && \
     apt-get install -y --no-install-recommends \
       openssh-server sudo curl wget git vim nano htop tmux \
@@ -16,7 +16,6 @@ RUN apt-get update -y || (sleep 5 && apt-get update -y) && \
       make libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
       libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev && \
     locale-gen en_US.UTF-8 && \
-    pip3 install bcrypt --break-system-packages && \
     rm -rf /var/lib/apt/lists/*
 
 # 2. تثبيت pyenv وإصدارات بايثون
@@ -28,22 +27,25 @@ RUN pyenv install 3.11 && \
     pyenv install 3.13 && \
     pyenv global 3.13
 
-# 3. تثبيت ttyd (الـ Web Terminal)
+# 3. تثبيت مكتبة bcrypt على بايثون pyenv (لتشفير باسورد اللوحة)
+RUN pip install bcrypt
+
+# 4. تثبيت ttyd (الـ Web Terminal)
 RUN arch="$(dpkg --print-architecture)" && \
     case "$arch" in amd64) t=x86_64;; arm64) t=aarch64;; *) t="$arch";; esac && \
     curl -fsSL "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.${t}" \
       -o /usr/local/bin/ttyd && chmod +x /usr/local/bin/ttyd
 
-# 4. تثبيت Cloudflared
+# 5. تثبيت Cloudflared
 RUN curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
       -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared
 
-# 5. تثبيت PufferPanel
+# 6. تثبيت PufferPanel
 RUN curl -s https://packagecloud.io/install/repositories/pufferpanel/pufferpanel/script.deb.sh | os=ubuntu dist=noble bash && \
     apt-get install -y pufferpanel && \
     rm -rf /var/lib/apt/lists/*
 
-# 6. إعداد مجلدات PufferPanel وملف الإعدادات
+# 7. إعداد مجلدات PufferPanel وملف الإعدادات
 RUN mkdir -p /var/lib/pufferpanel/email /var/lib/pufferpanel/servers /etc/pufferpanel
 RUN echo '{}' > /var/lib/pufferpanel/email/emails.json
 COPY <<'EOF' /etc/pufferpanel/config.json
@@ -67,12 +69,12 @@ COPY <<'EOF' /etc/pufferpanel/config.json
 EOF
 RUN cp /etc/pufferpanel/config.json /var/lib/pufferpanel/config.json
 
-# 7. إعداد SSH
+# 8. إعداد SSH
 RUN mkdir -p /run/sshd && \
     sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && \
     sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
 
-# 8. ملف التشغيل الرئيسي (Entrypoint)
+# 9. ملف التشغيل الرئيسي (Entrypoint)
 COPY <<'EOF' /entrypoint.sh
 #!/usr/bin/env bash
 set -e
