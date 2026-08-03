@@ -27,7 +27,7 @@ RUN pyenv install 3.11 && \
     pyenv install 3.13 && \
     pyenv global 3.13
 
-# 3. تثبيت ttyd (الـ Web Terminal على بورت 8080)
+# 3. تثبيت ttyd (الـ Web Terminal)
 RUN arch="$(dpkg --print-architecture)" && \
     case "$arch" in amd64) t=x86_64;; arm64) t=aarch64;; *) t="$arch";; esac && \
     curl -fsSL "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.${t}" \
@@ -42,14 +42,14 @@ RUN curl -s https://packagecloud.io/install/repositories/pufferpanel/pufferpanel
     apt-get install -y pufferpanel && \
     rm -rf /var/lib/apt/lists/*
 
-# 6. إعداد مجلدات PufferPanel وملف الإعدادات في مكانين لضمان قراءته
+# 6. إعداد مجلدات PufferPanel وملف الإعدادات (هخليها تشتغل على 8080)
 RUN mkdir -p /var/lib/pufferpanel/email /var/lib/pufferpanel/servers /etc/pufferpanel
 RUN echo '{}' > /var/lib/pufferpanel/email/emails.json
 COPY <<'EOF' /etc/pufferpanel/config.json
 {
   "panel": {
     "web": {
-      "listen": "0.0.0.0:8081"
+      "listen": "0.0.0.0:8080"
     },
     "database": {
       "dialect": "sqlite3",
@@ -82,27 +82,20 @@ export PYENV_ROOT="/root/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PYENV_ROOT/shims:$PATH"
 eval "$(pyenv init -)"
 
-# تشغيل PufferPanel من مجلدها مع تمرير البورت 8081 كمتغير بيئي (بدون استخدام --config)
+# إلغاء متغير PORT بتاع Railway عشان PufferPanel يقرأ ملف الكونفيج بس
+unset PORT
+
+# 1. تشغيل PufferPanel على بورت 8080
 cd /var/lib/pufferpanel
-env PORT=8081 pufferpanel run > /var/log/pufferpanel.log 2>&1 &
-PUFFER_PID=$!
+pufferpanel run > /var/log/pufferpanel.log 2>&1 &
 
-# فحص سريع للتأكد إن اللوحة مش هتقع فوراً
-sleep 5
-if ! kill -0 $PUFFER_PID 2>/dev/null; then
-    echo "❌❌ PufferPanel failed to start! Error logs:"
-    cat /var/log/pufferpanel.log
-else
-    echo "✅ PufferPanel started successfully on port 8081."
-fi
+# 2. تشغيل الـ Web Terminal على بورت 8081
+/usr/local/bin/ttyd --port 8081 --writable --credential "root:${ROOT_PASSWORD}" /bin/bash -l &
 
-# تشغيل الـ Web Terminal على بورت 8080
-/usr/local/bin/ttyd --port 8080 --writable --credential "root:${ROOT_PASSWORD}" /bin/bash -l &
-
-# تشغيل Cloudflare Tunnel للـ Web Terminal
+# 3. تشغيل Cloudflare Tunnel للـ Web Terminal (على بورت 8081)
 (while true; do
   > /tmp/cf.log
-  /usr/local/bin/cloudflared tunnel --url http://localhost:8080 >> /tmp/cf.log 2>&1
+  /usr/local/bin/cloudflared tunnel --url http://localhost:8081 >> /tmp/cf.log 2>&1
   sleep 5
 done) &
 
@@ -115,8 +108,8 @@ done) &
   echo "  Link: ${URL:-Waiting for Cloudflare Tunnel...}"
   echo "  User: root | Pass: ${ROOT_PASSWORD}"
   echo "================================================"
-  echo "  🚀 PufferPanel is running on port 8081"
-  echo "  (Railway Settings -> Networking -> Generate Domain -> Port 8081)"
+  echo "  🚀 PufferPanel is running on port 8080"
+  echo "  (Railway Settings -> Networking -> Generate Domain -> Port 8080)"
   echo "================================================"
   sleep 25
 done) &
