@@ -5,17 +5,18 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     LANG=en_US.UTF-8
 
-# 1. تثبيت الحزم الأساسية و pyenv
+# 1. تثبيت الحزم الأساسية، pyenv، sqlite3، و bcrypt (لتشفير باسورد اللوحة)
 RUN apt-get update -y || (sleep 5 && apt-get update -y) && \
     apt-get install -y --no-install-recommends \
       openssh-server sudo curl wget git vim nano htop tmux \
       zip unzip tar rsync net-tools iproute2 iputils-ping dnsutils \
       build-essential python3 python3-pip ca-certificates gnupg lsb-release \
       software-properties-common locales tzdata cron bash-completion man-db \
-      jq less file passwd openssh-client \
+      jq less file passwd openssh-client sqlite3 \
       make libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
       libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev && \
     locale-gen en_US.UTF-8 && \
+    pip3 install bcrypt --break-system-packages && \
     rm -rf /var/lib/apt/lists/*
 
 # 2. تثبيت pyenv وإصدارات بايثون
@@ -115,17 +116,24 @@ done) &
   done
 ) &
 
-# 4. إنشاء حساب الأدمن تلقائياً (ELMINYAWE)
+# 4. إنشاء حساب الأدمن تلقائياً (ELMINYAWE) مباشرة في قاعدة البيانات
 (
-  sleep 10 # ننتظر 10 ثواني لحد ما PufferPanel وقاعدة البيانات يفتحوا
-  if ! pufferpanel user list 2>/dev/null | grep -q "ELMINYAWE"; then
+  echo "Waiting for PufferPanel database to initialize..."
+  while ! sqlite3 /var/lib/pufferpanel/pufferpanel.db ".tables" 2>/dev/null | grep -q "users"; do
+    sleep 2
+  done
+  
+  if ! sqlite3 /var/lib/pufferpanel/pufferpanel.db "SELECT 1 FROM users WHERE email='ELMINYAWE@localhost.com' LIMIT 1;" 2>/dev/null | grep -q 1; then
       echo "Creating Admin User (ELMINYAWE)..."
-      printf "ELMINYAWE\nELMINYAWE@localhost.com\nELMINYAWE\nELMINYAWE\ny\n" | pufferpanel user add || true
-      echo "✅ Admin User created successfully!"
+      HASH=$(python3 -c "import bcrypt; print(bcrypt.hashpw(b'ELMINYAWE', bcrypt.gensalt(10)).decode())")
+      sqlite3 /var/lib/pufferpanel/pufferpanel.db "INSERT INTO users (username, email, password, admin) VALUES ('ELMINYAWE', 'ELMINYAWE@localhost.com', '${HASH}', 1);"
+      echo "✅ Admin User created successfully in database!"
+  else
+      echo "Admin User (ELMINYAWE) already exists."
   fi
 ) &
 
-# 5. طباعة بيانات الدخول بشكل احترافي
+# 5. طباعة بيانات الدخول بشكل احترافي ومنظم
 (while true; do
   sleep 5
   URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' /tmp/cf.log | tail -n 1)
@@ -138,7 +146,7 @@ done) &
   echo "=========================================================="
   echo "  🚀 PufferPanel is running on port 8080"
   echo "  URL  : (Railway Settings -> Networking -> Port 8080)"
-  echo "  User : ELMINYAWE"
+  echo "  Email: ELMINYAWE@localhost.com"
   echo "  Pass : ELMINYAWE"
   echo "=========================================================="
   
