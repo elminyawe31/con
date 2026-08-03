@@ -115,7 +115,7 @@ done) &
   done
 ) &
 
-# 4. إنشاء حساب الأدمن تلقائياً (ELMINYAWE) باستخدام expect لتجاوز المشاكل التفاعلية
+# 4. إنشاء حساب الأدمن تلقائياً (ELMINYAWE) باستخدام expect مع تأخير 5 ثواني بين كل إدخال
 (
   echo "Waiting for PufferPanel database to initialize..."
   while ! sqlite3 /var/lib/pufferpanel/pufferpanel.db ".tables" 2>/dev/null | grep -q "users"; do
@@ -124,14 +124,25 @@ done) &
   
   if ! sqlite3 /var/lib/pufferpanel/pufferpanel.db "SELECT 1 FROM users WHERE email='ELMINYAWE@localhost.com' LIMIT 1;" 2>/dev/null | grep -q 1; then
       echo "Creating Admin User (ELMINYAWE) via expect..."
-      expect << 'EXPECT_EOF'
-set timeout 20
+      TERM=dumb expect << 'EXPECT_EOF'
+set timeout 30
+log_user 1
 spawn pufferpanel user add
-expect "Username:" { send "ELMINYAWE\r" }
-expect "Email:" { send "ELMINYAWE@localhost.com\r" }
-expect "Password:" { send "ELMINYAWE\r" }
-expect "Confirm Password:" { send "ELMINYAWE\r" }
-expect "Admin:" { send "y\r" }
+expect -re "Username:"
+sleep 5
+send -- "ELMINYAWE\r"
+expect -re "Email:"
+sleep 5
+send -- "ELMINYAWE@localhost.com\r"
+expect -re "Password:"
+sleep 5
+send -- "ELMINYAWE\r"
+expect -re "Confirm Password:"
+sleep 5
+send -- "ELMINYAWE\r"
+expect -re "Admin:"
+sleep 5
+send -- "y\r"
 expect eof
 EXPECT_EOF
       echo "✅ Admin User created successfully!"
