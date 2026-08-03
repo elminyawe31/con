@@ -3,8 +3,7 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive \
     ROOT_PASSWORD=ELMINYAWE \
     TZ=UTC \
-    LANG=en_US.UTF-8 \
-    PORT=8081
+    LANG=en_US.UTF-8
 
 # 1. تثبيت الحزم الأساسية و pyenv
 RUN apt-get update -y && \
@@ -43,7 +42,7 @@ RUN curl -s https://packagecloud.io/install/repositories/pufferpanel/pufferpanel
     apt-get install -y pufferpanel && \
     rm -rf /var/lib/apt/lists/*
 
-# 6. إعداد مجلدات PufferPanel وملف الإيميل وملف الكونفيج
+# 6. إعداد مجلدات PufferPanel وملف الإعدادات في مكانين لضمان قراءته
 RUN mkdir -p /var/lib/pufferpanel/email /var/lib/pufferpanel/servers /etc/pufferpanel
 RUN echo '{}' > /var/lib/pufferpanel/email/emails.json
 COPY <<'EOF' /etc/pufferpanel/config.json
@@ -64,6 +63,7 @@ COPY <<'EOF' /etc/pufferpanel/config.json
   }
 }
 EOF
+RUN cp /etc/pufferpanel/config.json /var/lib/pufferpanel/config.json
 
 # 7. إعداد SSH
 RUN mkdir -p /run/sshd && \
@@ -82,9 +82,19 @@ export PYENV_ROOT="/root/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PYENV_ROOT/shims:$PATH"
 eval "$(pyenv init -)"
 
-# تشغيل PufferPanel في الخلفية من مجلده مع تمرير بورت 8081
+# تشغيل PufferPanel مع تحديد ملف الكونفيج والبورت صراحة
 cd /var/lib/pufferpanel
-nohup env PORT=8081 pufferpanel run > /var/log/pufferpanel.log 2>&1 &
+nohup env PORT=8081 pufferpanel run --config /var/lib/pufferpanel/config.json > /var/log/pufferpanel.log 2>&1 &
+PUFFER_PID=$!
+
+# فحص سريع للتأكد إن اللوحة مش هتقع فوراً
+sleep 5
+if ! kill -0 $PUFFER_PID 2>/dev/null; then
+    echo "❌❌ PufferPanel failed to start! Error logs:"
+    cat /var/log/pufferpanel.log
+else
+    echo "✅ PufferPanel started successfully on port 8081."
+fi
 
 # تشغيل الـ Web Terminal على بورت 8080
 /usr/local/bin/ttyd --port 8080 --writable --credential "root:${ROOT_PASSWORD}" /bin/bash -l &
