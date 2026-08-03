@@ -100,7 +100,6 @@ done) &
     pufferpanel run > /var/log/pufferpanel.log 2>&1 &
     PUFFER_PID=$!
     
-    # انتظر 5 ثواني وتأكد إنها مش وقعت
     sleep 5
     if ! kill -0 $PUFFER_PID 2>/dev/null; then
         echo "❌❌ PufferPanel crashed! Error logs:"
