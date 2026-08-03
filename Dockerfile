@@ -5,7 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     LANG=en_US.UTF-8
 
-# 1. تثبيت الحزم الأساسية و pyenv (من ريبرو cont)
+# 1. تثبيت الحزم الأساسية و pyenv
 RUN apt-get update -y || (sleep 5 && apt-get update -y) && \
     apt-get install -y --no-install-recommends \
       openssh-server sudo curl wget git vim nano htop tmux \
@@ -82,23 +82,40 @@ export PYENV_ROOT="/root/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PYENV_ROOT/shims:$PATH"
 eval "$(pyenv init -)"
 
-# 1. تشغيل PufferPanel على بورت 8080
-cd /var/lib/pufferpanel
-unset PORT
-pufferpanel run > /var/log/pufferpanel.log 2>&1 &
-PUFFER_PID=$!
-
-# 2. تشغيل الـ Web Terminal على بورت 8081
+# 1. تشغيل الـ Web Terminal على بورت 8081
 /usr/local/bin/ttyd --port 8081 --writable --credential "root:${ROOT_PASSWORD}" /bin/bash -l &
 
-# 3. تشغيل Cloudflare Tunnel للـ Web Terminal
+# 2. تشغيل Cloudflare Tunnel للـ Web Terminal
+touch /tmp/cf.log
 (while true; do
-  > /tmp/cf.log
   /usr/local/bin/cloudflared tunnel --url http://localhost:8081 >> /tmp/cf.log 2>&1
   sleep 5
 done) &
 
-# 4. طباعة بيانات الدخول وفحص اللوحة
+# 3. تشغيل PufferPanel مع مراقبتها (لو وقعت تشتغل تاني)
+(
+  cd /var/lib/pufferpanel
+  unset PORT
+  while true; do
+    pufferpanel run > /var/log/pufferpanel.log 2>&1 &
+    PUFFER_PID=$!
+    
+    # انتظر 5 ثواني وتأكد إنها مش وقعت
+    sleep 5
+    if ! kill -0 $PUFFER_PID 2>/dev/null; then
+        echo "❌❌ PufferPanel crashed! Error logs:"
+        cat /var/log/pufferpanel.log
+        echo "Restarting PufferPanel in 5 seconds..."
+        sleep 5
+    else
+        wait $PUFFER_PID
+        echo "PufferPanel stopped. Restarting in 5 seconds..."
+        sleep 5
+    fi
+  done
+) &
+
+# 4. طباعة بيانات الدخول
 (while true; do
   sleep 5
   URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' /tmp/cf.log | tail -n 1)
@@ -110,16 +127,11 @@ done) &
   echo "  🚀 PufferPanel is running on port 8080"
   echo "  (Railway Settings -> Networking -> Generate Domain -> Port 8080)"
   echo "================================================"
-  
-  # فحص لو PufferPanel وقعت
-  if ! kill -0 $PUFFER_PID 2>/dev/null; then
-      echo "❌❌ PufferPanel crashed! Error logs:"
-      cat /var/log/pufferpanel.log
-  fi
   sleep 25
 done) &
 
-tail -f /tmp/cf.log
+# الحفاظ على تشغيل الحاوية إلى الأبد
+wait
 EOF
 RUN chmod +x /entrypoint.sh
 
