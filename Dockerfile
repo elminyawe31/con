@@ -81,7 +81,8 @@ export PYENV_ROOT="/root/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PYENV_ROOT/shims:$PATH"
 eval "$(pyenv init -)"
 
-# تشغيل PufferPanel في الخلفية على بورت 8081
+# تشغيل PufferPanel في الخلفية على بورت 8081 من مجلد البيانات الخاص به
+cd /var/lib/pufferpanel
 nohup pufferpanel run > /var/log/pufferpanel.log 2>&1 &
 
 # تشغيل الـ Web Terminal على بورت 8080
