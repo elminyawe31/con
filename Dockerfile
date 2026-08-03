@@ -27,7 +27,7 @@ RUN pyenv install 3.11 && \
     pyenv install 3.13 && \
     pyenv global 3.13
 
-# 3. تثبيت مكتبة bcrypt على بايثون pyenv (لتشفير باسورد اللوحة تلقائياً)
+# 3. تثبيت مكتبة bcrypt على بايثون pyenv
 RUN pip install bcrypt
 
 # 4. تثبيت ttyd (الـ Web Terminal)
@@ -133,7 +133,6 @@ db_path = '/var/lib/pufferpanel/pufferpanel.db'
 conn = sqlite3.connect(db_path)
 c = conn.cursor()
 
-# 1. إنشاء الحساب إذا لم يكن موجوداً
 try:
     c.execute("SELECT id FROM users WHERE email='ELMINYAWE@localhost.com'")
     user_row = c.fetchone()
@@ -155,18 +154,19 @@ try:
         c.execute("PRAGMA table_info(permissions)")
         cols = [col[1] for col in c.fetchall()]
         
-        if 'user_id' in cols and 'permission' in cols and 'value' in cols:
-            # التحقق إذا كانت الصلاحية موجودة
-            c.execute("SELECT 1 FROM permissions WHERE user_id=? AND permission='*'", (user_id,))
-            if not c.fetchone():
-                # إدراج صلاحية Wildcard (*) التي تعطي صلاحية أدمن كاملة
-                c.execute("INSERT INTO permissions (user_id, permission, value) VALUES (?, '*', '1')", (user_id,))
-                conn.commit()
-                print("✅ Admin permissions granted successfully!")
-            else:
-                print("Admin permissions already exist.")
+        if 'user_id' in cols and 'permission' in cols:
+            # إدراج صلاحية Wildcard (*) و admin 
+            for perm in ['*', 'admin']:
+                c.execute("SELECT 1 FROM permissions WHERE user_id=? AND permission=?", (user_id, perm))
+                if not c.fetchone():
+                    if 'value' in cols:
+                        c.execute("INSERT INTO permissions (user_id, permission, value) VALUES (?, ?, '1')", (user_id, perm))
+                    else:
+                        c.execute("INSERT INTO permissions (user_id, permission) VALUES (?, ?)", (user_id, perm))
+                    conn.commit()
+                    print(f"✅ Permission '{perm}' granted successfully!")
         else:
-            print("Permissions table structure not as expected.")
+            print("Permissions table structure not as expected. Columns found:", cols)
     else:
         print("Permissions table not found.")
 
