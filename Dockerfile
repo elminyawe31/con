@@ -42,7 +42,7 @@ RUN curl -s https://packagecloud.io/install/repositories/pufferpanel/pufferpanel
     apt-get install -y pufferpanel && \
     rm -rf /var/lib/apt/lists/*
 
-# 6. إعداد مجلدات PufferPanel وملف الإعدادات (هتشغل على بورت 8080 وإضافة مسار الواجهة لحل مشكلة 404)
+# 6. إعداد مجلدات PufferPanel وملف الإعدادات
 RUN mkdir -p /var/lib/pufferpanel/email /var/lib/pufferpanel/servers /etc/pufferpanel
 RUN echo '{}' > /var/lib/pufferpanel/email/emails.json
 COPY <<'EOF' /etc/pufferpanel/config.json
@@ -93,7 +93,7 @@ touch /tmp/cf.log
   sleep 5
 done) &
 
-# 3. تشغيل PufferPanel مع مراقبتها (لو وقعت تشتغل تاني)
+# 3. تشغيل PufferPanel مع مراقبتها
 (
   cd /var/lib/pufferpanel
   unset PORT
@@ -115,18 +115,33 @@ done) &
   done
 ) &
 
-# 4. طباعة بيانات الدخول
+# 4. إنشاء حساب الأدمن تلقائياً (ELMINYAWE)
+(
+  sleep 10 # ننتظر 10 ثواني لحد ما PufferPanel وقاعدة البيانات يفتحوا
+  if ! pufferpanel user list 2>/dev/null | grep -q "ELMINYAWE"; then
+      echo "Creating Admin User (ELMINYAWE)..."
+      printf "ELMINYAWE\nELMINYAWE@localhost.com\nELMINYAWE\nELMINYAWE\ny\n" | pufferpanel user add || true
+      echo "✅ Admin User created successfully!"
+  fi
+) &
+
+# 5. طباعة بيانات الدخول بشكل احترافي
 (while true; do
   sleep 5
   URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' /tmp/cf.log | tail -n 1)
-  echo "================================================"
+  
+  echo "=========================================================="
   echo "  ✅ WEB TERMINAL IS READY!"
-  echo "  Link: ${URL:-Waiting for Cloudflare Tunnel...}"
-  echo "  User: root | Pass: ${ROOT_PASSWORD}"
-  echo "================================================"
+  echo "  Link : ${URL:-Waiting for Cloudflare Tunnel...}"
+  echo "  User : root"
+  echo "  Pass : ${ROOT_PASSWORD}"
+  echo "=========================================================="
   echo "  🚀 PufferPanel is running on port 8080"
-  echo "  (Railway Settings -> Networking -> Generate Domain -> Port 8080)"
-  echo "================================================"
+  echo "  URL  : (Railway Settings -> Networking -> Port 8080)"
+  echo "  User : ELMINYAWE"
+  echo "  Pass : ELMINYAWE"
+  echo "=========================================================="
+  
   sleep 25
 done) &
 
