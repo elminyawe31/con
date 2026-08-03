@@ -3,7 +3,8 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive \
     ROOT_PASSWORD=ELMINYAWE \
     TZ=UTC \
-    LANG=en_US.UTF-8
+    LANG=en_US.UTF-8 \
+    PORT=8081
 
 # 1. تثبيت الحزم الأساسية و pyenv
 RUN apt-get update -y && \
@@ -42,7 +43,7 @@ RUN curl -s https://packagecloud.io/install/repositories/pufferpanel/pufferpanel
     apt-get install -y pufferpanel && \
     rm -rf /var/lib/apt/lists/*
 
-# 6. إعداد مجلدات PufferPanel وملف الكونفيج الإجباري على بورت 8081
+# 6. إعداد مجلدات PufferPanel وملف الإيميل وملف الكونفيج
 RUN mkdir -p /var/lib/pufferpanel/email /var/lib/pufferpanel/servers /etc/pufferpanel
 RUN echo '{}' > /var/lib/pufferpanel/email/emails.json
 COPY <<'EOF' /etc/pufferpanel/config.json
@@ -81,9 +82,9 @@ export PYENV_ROOT="/root/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PYENV_ROOT/shims:$PATH"
 eval "$(pyenv init -)"
 
-# تشغيل PufferPanel في الخلفية على بورت 8081 من مجلد البيانات الخاص به
+# تشغيل PufferPanel في الخلفية من مجلده مع تمرير بورت 8081
 cd /var/lib/pufferpanel
-nohup pufferpanel run > /var/log/pufferpanel.log 2>&1 &
+nohup env PORT=8081 pufferpanel run > /var/log/pufferpanel.log 2>&1 &
 
 # تشغيل الـ Web Terminal على بورت 8080
 /usr/local/bin/ttyd --port 8080 --writable --credential "root:${ROOT_PASSWORD}" /bin/bash -l &
