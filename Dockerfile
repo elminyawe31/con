@@ -5,7 +5,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     LANG=en_US.UTF-8
 
-# 1. تثبيت الحزم الأساسية و pyenv و sqlite3
 RUN apt-get update -y || (sleep 5 && apt-get update -y) && \
     apt-get install -y --no-install-recommends \
       openssh-server sudo curl wget git vim nano htop tmux \
@@ -18,36 +17,33 @@ RUN apt-get update -y || (sleep 5 && apt-get update -y) && \
     locale-gen en_US.UTF-8 && \
     rm -rf /var/lib/apt/lists/*
 
-# 2. تثبيت pyenv وإصدارات بايثون
 RUN curl -fsSL https://pyenv.run | bash
+
 ENV PYENV_ROOT="/root/.pyenv"
 ENV PATH="$PYENV_ROOT/bin:$PYENV_ROOT/shims:$PATH"
+
 RUN pyenv install 3.11 && \
     pyenv install 3.12 && \
     pyenv install 3.13 && \
     pyenv global 3.13
 
-# 3. تثبيت مكتبة bcrypt على بايثون pyenv
 RUN pip install bcrypt
 
-# 4. تثبيت ttyd (الـ Web Terminal)
 RUN arch="$(dpkg --print-architecture)" && \
     case "$arch" in amd64) t=x86_64;; arm64) t=aarch64;; *) t="$arch";; esac && \
     curl -fsSL "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.${t}" \
       -o /usr/local/bin/ttyd && chmod +x /usr/local/bin/ttyd
 
-# 5. تثبيت Cloudflared
 RUN curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
       -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared
 
-# 6. تثبيت PufferPanel
 RUN curl -s https://packagecloud.io/install/repositories/pufferpanel/pufferpanel/script.deb.sh | os=ubuntu dist=noble bash && \
     apt-get install -y pufferpanel && \
     rm -rf /var/lib/apt/lists/*
 
-# 7. إعداد مجلدات PufferPanel وملف الإعدادات
 RUN mkdir -p /var/lib/pufferpanel/email /var/lib/pufferpanel/servers /etc/pufferpanel
 RUN echo '{}' > /var/lib/pufferpanel/email/emails.json
+
 COPY <<'EOF' /etc/pufferpanel/config.json
 {
   "panel": {
@@ -67,14 +63,13 @@ COPY <<'EOF' /etc/pufferpanel/config.json
   }
 }
 EOF
+
 RUN cp /etc/pufferpanel/config.json /var/lib/pufferpanel/config.json
 
-# 8. إعداد SSH
 RUN mkdir -p /run/sshd && \
     sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && \
     sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
 
-# 9. ملف التشغيل الرئيسي (Entrypoint)
 COPY <<'EOF' /entrypoint.sh
 #!/usr/bin/env bash
 set -e
@@ -86,17 +81,14 @@ export PYENV_ROOT="/root/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PYENV_ROOT/shims:$PATH"
 eval "$(pyenv init -)"
 
-# 1. تشغيل الـ Web Terminal على بورت 8081
 /usr/local/bin/ttyd --port 8081 --writable --credential "root:${ROOT_PASSWORD}" /bin/bash -l &
 
-# 2. تشغيل Cloudflare Tunnel للـ Web Terminal
 touch /tmp/cf.log
 (while true; do
   /usr/local/bin/cloudflared tunnel --url http://localhost:8081 >> /tmp/cf.log 2>&1
   sleep 5
 done) &
 
-# 3. تشغيل PufferPanel مع مراقبتها
 (
   cd /var/lib/pufferpanel
   unset PORT
@@ -118,7 +110,6 @@ done) &
   done
 ) &
 
-# 4. إنشاء حساب الأدمن تلقائياً مع صلاحيات الأدمن الكاملة (تم تحديث الهيكل)
 (
   echo "Waiting for PufferPanel database to initialize..."
   while ! sqlite3 /var/lib/pufferpanel/pufferpanel.db ".tables" 2>/dev/null | grep -q "users"; do
@@ -148,10 +139,8 @@ try:
     
     user_id = user_row[0]
 
-    # 2. إضافة صلاحيات الأدمن في جدول permissions (هيكل النسخة الجديدة)
     c.execute("SELECT 1 FROM permissions WHERE user_id=?", (user_id,))
     if not c.fetchone():
-        # إدراج صف جديد بصلاحيات أدمن كاملة (1)
         c.execute("""
             INSERT INTO permissions (
                 user_id, admin, view_server, create_server, view_nodes, edit_nodes, 
@@ -165,7 +154,6 @@ try:
         conn.commit()
         print("✅ Admin permissions granted successfully!")
     else:
-        # تحديث الصف الحالي ليكون أدمن
         c.execute("UPDATE permissions SET admin=1 WHERE user_id=?", (user_id,))
         conn.commit()
         print("✅ Admin permissions updated.")
@@ -177,7 +165,6 @@ finally:
 PYEOF
 ) &
 
-# 5. طباعة بيانات الدخول بشكل احترافي ومنظم
 (while true; do
   sleep 5
   URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' /tmp/cf.log | tail -n 1)
@@ -197,9 +184,9 @@ PYEOF
   sleep 25
 done) &
 
-# الحفاظ على تشغيل الحاوية إلى الأبد
 wait
 EOF
+
 RUN chmod +x /entrypoint.sh
 
 EXPOSE 8080 8081 22 5657
